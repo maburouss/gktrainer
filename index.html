@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Goalkeeper Trainer</title>
+
+<!-- App Icon (Favicon + iPhone Home Screen Icon) -->
+<link rel="icon" type="image/svg+xml"
+href="data:image/svg+xml;utf8,
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>
+<rect width='100' height='100' fill='%231f8f2e'/>
+<circle cx='50' cy='50' r='22' fill='red'/>
+</svg>">
+
+<link rel="apple-touch-icon"
+href="data:image/svg+xml;utf8,
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'>
+<rect width='180' height='180' fill='%231f8f2e'/>
+<circle cx='90' cy='90' r='40' fill='red'/>
+</svg>">
+
+<style>
+html,body{
+margin:0;padding:0;overflow:hidden;height:100%;width:100%;
+background:#1f8f2e;font-family:Arial,Helvetica,sans-serif;
+}
+
+/* GOAL */
+#goal{
+position:fixed;
+width:92vw;
+height:65vh;
+border:14px solid white;
+box-sizing:border-box;
+left:50%;top:50%;
+transform:translate(-50%,-50%);
+z-index:1;
+}
+#goal::after{
+content:"";
+position:absolute;inset:0;
+background-image:
+linear-gradient(rgba(255,255,255,.25) 1px,transparent 1px),
+linear-gradient(90deg,rgba(255,255,255,.25) 1px,transparent 1px);
+background-size:40px 40px;
+}
+
+/* BALL / DOT */
+#dot{
+position:fixed;
+display:none;
+z-index:3;
+}
+
+/* RED DOT */
+.dot{
+background:red;
+border-radius:50%;
+}
+
+/* SIMPLE SOCCER BALL */
+.ball{
+border-radius:50%;
+background:white;
+box-shadow: inset 0 0 0 4px black;
+position:relative;
+}
+.ball:before,.ball:after{
+content:"";
+position:absolute;
+background:black;
+border-radius:50%;
+}
+.ball:before{width:35%;height:35%;left:32%;top:32%;}
+.ball:after{width:20%;height:20%;left:10%;top:60%;}
+
+/* BUTTONS */
+#startBtn{
+position:fixed;
+left:50%;top:50%;
+transform:translate(-50%,-50%);
+padding:25px 60px;
+font-size:32px;
+border-radius:20px;
+border:none;background:white;font-weight:bold;z-index:5;
+}
+
+#exitBtn{
+position:fixed;top:12px;right:12px;
+padding:12px 18px;font-size:16px;border-radius:12px;
+border:none;background:rgba(0,0,0,.7);color:white;
+display:none;z-index:10;
+}
+
+#settingsBtn{
+position:fixed;top:12px;left:12px;
+padding:12px 16px;font-size:18px;border-radius:12px;
+border:none;background:rgba(0,0,0,.7);color:white;
+z-index:10;
+}
+
+/* SETTINGS PANEL */
+#settingsPanel{
+position:fixed;
+left:50%;top:50%;
+transform:translate(-50%,-50%);
+background:rgba(0,0,0,.9);
+color:white;
+padding:20px;
+border-radius:18px;
+display:none;
+z-index:20;
+width:280px;
+}
+
+.setting{
+margin:12px 0;
+display:flex;
+justify-content:space-between;
+align-items:center;
+}
+
+select,input[type=checkbox]{
+transform:scale(1.2);
+}
+
+h3{margin:0 0 10px 0;text-align:center;}
+</style>
+</head>
+
+<body>
+
+<div id="goal"></div>
+
+<button id="startBtn">START</button>
+<button id="exitBtn">EXIT</button>
+<button id="settingsBtn">⚙</button>
+
+<div id="dot"></div>
+
+<div id="settingsPanel">
+<h3>Training Settings</h3>
+
+<div class="setting">
+<label>Soccer Ball</label>
+<input type="checkbox" id="ballToggle">
+</div>
+
+<div class="setting">
+<label>Shot Streak Mode</label>
+<input type="checkbox" id="streakToggle">
+</div>
+
+<div class="setting">
+<label>Difficulty</label>
+<select id="difficulty">
+<option value="easy">Easy</option>
+<option value="medium">Medium</option>
+<option value="hard">Hard</option>
+</select>
+</div>
+
+<div class="setting">
+<label>Weak Side Bias</label>
+<select id="bias">
+<option value="none">None</option>
+<option value="left">Left</option>
+<option value="right">Right</option>
+</select>
+</div>
+
+</div>
+
+<script>
+let playing=false,spawnTimer,dotTimer,wakeLock;
+
+const dot=document.getElementById("dot");
+const goal=document.getElementById("goal");
+const startBtn=document.getElementById("startBtn");
+const exitBtn=document.getElementById("exitBtn");
+const settingsBtn=document.getElementById("settingsBtn");
+const panel=document.getElementById("settingsPanel");
+
+const ballToggle=document.getElementById("ballToggle");
+const streakToggle=document.getElementById("streakToggle");
+const difficulty=document.getElementById("difficulty");
+const bias=document.getElementById("bias");
+
+/* Prevent screen dimming */
+async function keepAwake(){
+try{ if('wakeLock' in navigator) wakeLock=await navigator.wakeLock.request('screen'); }
+catch(e){}
+}
+
+/* Difficulty timing */
+function randomDelay(){
+let max;
+switch(difficulty.value){
+case"medium":max=7;break;
+case"hard":max=4;break;
+default:max=10;
+}
+return(Math.random()*max+1)*1000;
+}
+
+/* place dot respecting bias */
+function placeDot(size){
+const rect=goal.getBoundingClientRect();
+
+const maxX=rect.width-size;
+const maxY=rect.height-size;
+
+let x;
+
+if(bias.value==="left" && Math.random()<0.7)
+x=rect.left+Math.random()*(maxX*0.5);
+else if(bias.value==="right" && Math.random()<0.7)
+x=rect.left+(maxX*0.5)+Math.random()*(maxX*0.5);
+else
+x=rect.left+Math.random()*maxX;
+
+const y=rect.top+Math.random()*maxY;
+
+dot.style.left=x+"px";
+dot.style.top=y+"px";
+}
+
+/* MAIN SPAWN LOGIC */
+function spawnDot(){
+
+if(!playing) return;
+
+const size=window.innerWidth*0.085;
+dot.style.width=size+"px";
+dot.style.height=size+"px";
+
+/* ball or dot */
+dot.className="";
+if(ballToggle.checked) dot.classList.add("ball");
+else dot.classList.add("dot");
+
+/* -------- NORMAL MODE -------- */
+if(!streakToggle.checked){
+
+placeDot(size);
+dot.style.display="block";
+
+dotTimer=setTimeout(()=>{
+dot.style.display="none";
+scheduleNext();
+},3000);
+
+return;
+}
+
+/* -------- STREAK MODE (FIXED) -------- */
+let shot=0;
+
+function streakShot(){
+
+if(!playing) return;
+
+if(shot>=3){
+dot.style.display="none";
+scheduleNext();
+return;
+}
+
+placeDot(size);
+dot.style.display="block";
+shot++;
+
+dotTimer=setTimeout(()=>{
+dot.style.display="none";
+setTimeout(streakShot,80);
+},1000);
+
+}
+
+streakShot();
+}
+
+function scheduleNext(){
+if(!playing) return;
+spawnTimer=setTimeout(spawnDot,randomDelay());
+}
+
+/* START */
+startBtn.onclick=async()=>{
+playing=true;
+startBtn.style.display="none";
+exitBtn.style.display="block";
+await keepAwake();
+scheduleNext();
+}
+
+/* EXIT */
+exitBtn.onclick=()=>{
+playing=false;
+clearTimeout(spawnTimer);
+clearTimeout(dotTimer);
+dot.style.display="none";
+exitBtn.style.display="none";
+startBtn.style.display="block";
+}
+
+/* SETTINGS */
+settingsBtn.onclick=()=>{
+panel.style.display=panel.style.display==="block"?"none":"block";
+}
+</script>
+
+</body>
+</html>
